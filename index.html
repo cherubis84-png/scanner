@@ -106,6 +106,21 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border
 table{border-collapse:collapse;font-size:13px;width:100%;min-width:520px}
 th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-weight:500;color:var(--muted);font-size:12px}
+/* 타이밍 분석 */
+.timing{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:10px}
+.verdict{border-radius:10px;padding:10px 12px;font-weight:700;font-size:15px}
+.v-good{background:var(--up-soft);color:var(--up)}
+.v-wait{background:var(--warn-soft);color:var(--warn)}
+.v-bad{background:var(--down-soft);color:var(--down)}
+.chk{display:grid;grid-template-columns:20px 1fr;gap:2px 8px;font-size:13px;align-items:baseline}
+.chk b{font-weight:500}
+.chk .d{grid-column:2;color:var(--muted);font-size:12px}
+.mk-ok{color:var(--up)} .mk-no{color:var(--down)} .mk-na{color:var(--muted)}
+.chart svg{width:100%;height:auto;display:block}
+.plan{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.plan span:nth-child(odd){color:var(--muted)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -148,6 +163,8 @@ th{font-weight:500;color:var(--muted);font-size:12px}
       <h2>데이터 연결</h2>
       <p class="small muted">무료 Finnhub API 키가 필요합니다. finnhub.io에서 가입하면 바로 발급됩니다. 키는 이 기기에만 저장됩니다.</p>
       <input type="password" id="apiKey" placeholder="Finnhub API 키" autocomplete="off">
+      <input type="password" id="avKey" placeholder="Alpha Vantage API 키 (매수 타이밍 분석용, 선택)" autocomplete="off">
+      <p class="small muted">매수 타이밍 분석에는 일봉 차트가 필요합니다. Finnhub 무료 등급에서 일봉이 막히면 Alpha Vantage 키로 대신 받습니다(하루 25회).</p>
       <div class="row"><button class="btn" id="saveKey">키 저장</button><span id="keyMsg" class="small muted"></span></div>
     </div>
     <div class="panel stack">
@@ -193,6 +210,8 @@ th{font-weight:500;color:var(--muted);font-size:12px}
         <thead><tr><th>신호</th><th>무엇을 보나</th><th>사례</th></tr></thead>
         <tbody id="factorTbl"></tbody>
       </table></div>
+      <h3>좋은 종목과 좋은 매수 시점은 다릅니다</h3>
+      <p class="small">순위 점수는 종목의 체력을 봅니다. 언제 살지는 종목을 펼친 뒤 ‘매수 타이밍 분석’에서 일봉으로 따로 점검합니다. 강한 주도주는 급등 뒤 거래량이 줄면서 20일선이나 50일선까지 얕게 조정받고, 그 자리에서 다시 고개를 드는 경우가 많습니다. 반대로 50일선을 큰 거래량과 함께 깨거나, 고점에서 변동성 대비 지나치게 깊이 빠지면 추세가 꺾였을 가능성을 의심합니다. 실적 발표 2주 이내에는 차트보다 발표 내용이 주가를 좌우하므로 따로 표시합니다.</p>
       <h3>꼭 알아둘 한계</h3>
       <ul class="small">
         <li>생존자 편향: 같은 신호를 보이고도 실패한 종목이 훨씬 많습니다. 2021년 고성장주들은 점수가 높았다가 2022년 크게 하락했습니다.</li>
@@ -293,8 +312,9 @@ function scoreStock(d, W){
 
   // 6 거래량
   { const v10=num(m["10DayAverageTradingVolume"]), v3=num(m["3MonthAverageTradingVolume"]), r5=num(m["5DayPriceReturnDaily"]);
-    if(v10&&v3){ const r=v10/v3; let s=clamp((r-0.8)/0.7); if(r5!=null&&r5<0)s*=0.5;
-      P.vol={s,note:`10일 평균이 3개월 평균의 ${(r*100).toFixed(0)}%`}; } }
+    if(v10&&v3){ const r=v10/v3; let s=clamp((r-0.8)/0.7), extra="";
+      if(r5!=null&&r5<0){ if(r<1){s=0.5;extra=", 하락 중 거래량 감소(양호)";} else {s*=0.5;extra=", 하락 중 거래량 증가(주의)";} }
+      P.vol={s,note:`10일 평균이 3개월 평균의 ${(r*100).toFixed(0)}%${extra}`}; } }
 
   // 7 애널리스트
   { const rec=(Array.isArray(d.rec)?d.rec:[]).slice().sort((a,b)=>String(b.period).localeCompare(String(a.period)));
@@ -323,6 +343,95 @@ function scoreStock(d, W){
   return {P,total,coverage,flags,grade,ps,pe};
 }
 
+/* ---------- 매수 타이밍 분석 (일봉 기반) ---------- */
+function smaAt(a,p,i){ if(i-p+1<0) return null; let s=0; for(let k=i-p+1;k<=i;k++) s+=a[k]; return s/p; }
+function atrAt(b,p,i){ if(i-p<0) return null; let s=0; for(let k=i-p+1;k<=i;k++){ const pc=b[k-1].c; s+=Math.max(b[k].h-b[k].l, Math.abs(b[k].h-pc), Math.abs(b[k].l-pc)); } return s/p; }
+function rsi(c,p=14){ if(c.length<p+1) return null; let g=0,l=0;
+  for(let i=1;i<=p;i++){ const d=c[i]-c[i-1]; if(d>0)g+=d; else l-=d; } g/=p; l/=p;
+  for(let i=p+1;i<c.length;i++){ const d=c[i]-c[i-1]; g=(g*(p-1)+Math.max(d,0))/p; l=(l*(p-1)+Math.max(-d,0))/p; }
+  return l===0?100:100-100/(1+g/l); }
+
+function analyzeTiming(bars, earnDate, today){
+  const n=bars.length; if(n<60) return null;
+  const c=bars.map(b=>b.c), v=bars.map(b=>b.v), L=n-1, last=c[L];
+  const ma10=smaAt(c,10,L), ma20=smaAt(c,20,L), ma50=smaAt(c,50,L), ma200=n>=200?smaAt(c,200,L):null;
+  const ma50prev=smaAt(c,50,L-10);
+  const hi60=Math.max(...bars.slice(-60).map(b=>b.h));
+  const hiIdx=L-bars.slice(-60).slice().reverse().findIndex(b=>b.h===hi60);
+  const pull=(hi60-last)/hi60, atr=atrAt(bars,14,L), atrPct=atr/last;
+  const ext50=last/ma50-1, r=rsi(c);
+  const avgV50=smaAt(v,50,L), v5=smaAt(v,5,L);
+  let up=0,dn=0; for(let i=L-19;i<=L;i++){ if(c[i]>c[i-1]) up+=v[i]; else if(c[i]<c[i-1]) dn+=v[i]; }
+  const udr=dn?up/dn:null;
+  let dnV=0,dnN=0; for(let i=Math.max(hiIdx+1,L-9);i<=L;i++){ if(c[i]<c[i-1]){dnV+=v[i];dnN++;} }
+  const pullVol = dnN? (dnV/dnN)/avgV50 : null;
+  const atr10=atrAt(bars,10,L), atr50=n>51?atrAt(bars,50,L):null, contract=atr50?atr10/atr50:null;
+  let rebound=false; for(let i=L-2;i<=L;i++){ const m=smaAt(c,10,i), mp=smaAt(c,10,i-1); if(c[i]>m && c[i-1]<=mp) rebound=true; }
+  const hi5=Math.max(...bars.slice(-6,-1).map(b=>b.h));
+  if(last>hi5 && pull>0.02) rebound=true;
+  const swingLow=Math.min(...bars.slice(-15).map(b=>b.l));
+  const limit=Math.min(0.25, Math.max(0.12, 4*atrPct));
+  const trendUp = last>ma50 && ma50>ma50prev && (ma200==null || ma50>ma200);
+  const dEarn = earnDate ? Math.round((new Date(earnDate+"T00:00:00") - new Date(today+"T00:00:00"))/864e5) : null;
+  const pct=x=>(x*100).toFixed(1)+"%";
+
+  const checks=[
+    {ok:trendUp, label:"중기 상승 추세", d:`50일선 ${ma50.toFixed(2)} ${ma50>ma50prev?"상승 중":"하락 중"}${ma200!=null?`, 200일선 ${ma200.toFixed(2)}`:", 200일선은 데이터 부족"}`},
+    {ok:ext50<0.20, label:"과열 아님", d:`50일선보다 ${pct(ext50)} 위 (25% 넘으면 과열)`},
+    {ok:pull<0.03?null:pull<=limit, label:"조정 깊이 적당", d:pull<0.03?`고점 대비 ${pct(-pull)}, 아직 조정이라 보기 어려움`:`60일 고점 ${hi60.toFixed(2)} 대비 -${pct(pull)} (허용 -${pct(limit)}, 변동성 반영)`},
+    {ok:pullVol==null?null:pullVol<1, label:"하락일 거래량 감소", d:pullVol==null?"최근 하락일 없음":`조정 중 하락일 거래량이 50일 평균의 ${(pullVol*100).toFixed(0)}%`},
+    {ok:udr==null?null:udr>=1, label:"매수세 우위", d:udr==null?"–":`20일 상승일/하락일 거래량 비율 ${udr.toFixed(2)}`},
+    {ok:r==null?null:(r>=40&&r<=68), label:"RSI 정상 범위", d:r==null?"–":`RSI(14) ${r.toFixed(0)} (40~68 적정, 70↑ 과매수, 35↓ 약세)`},
+    {ok:last>=ma20?true:(last>=ma50?null:false), label:"지지선 유지", d:last>=ma20?`20일선 ${ma20.toFixed(2)} 위`:last>=ma50?`20일선 아래, 50일선 ${ma50.toFixed(2)} 위`:"50일선 이탈"},
+    {ok:contract==null?null:contract<0.85, label:"변동성 수축", d:contract==null?"–":`최근 10일 변동폭이 50일 평균의 ${(contract*100).toFixed(0)}%`},
+    {ok:rebound, label:"반등 확인", d:rebound?"최근 10일선 회복 또는 5일 고점 돌파":`종가가 ${hi5.toFixed(2)} 위로 올라서면 반등 신호`},
+    {ok:dEarn==null?null:dEarn>14, label:"실적 발표와 거리", d:dEarn==null?"예정일 정보 없음":`${earnDate} 발표, ${dEarn}일 남음`+(dEarn<=14?" (발표 전후 급등락 위험)":"")}
+  ];
+
+  let verdict, cls;
+  if(!(last>ma50) && !(ma50>ma50prev)){ verdict="추세 훼손 — 관망"; cls="v-bad"; }
+  else if(ext50>0.25 || (r!=null&&r>72)){ verdict="과열 — 추격 매수 주의"; cls="v-bad"; }
+  else if(pull<0.03){ verdict="고점 부근 — 돌파 확인 또는 눌림 대기"; cls="v-wait"; }
+  else if(pull>limit || last<ma50){ verdict="깊은 조정 — 50일선 회복 확인 필요"; cls="v-bad"; }
+  else if(rebound && (pullVol==null||pullVol<1)){ verdict="건전한 조정 후 반등 신호"; cls="v-good"; }
+  else { verdict="건전한 조정 중 — 지지 확인 대기"; cls="v-wait"; }
+  const okN=checks.filter(x=>x.ok===true).length;
+
+  const stop=Math.min(ma50, swingLow)-atr;
+  const plan={
+    zone1:ma20, zone2:ma50, trigger:hi5,
+    stop, stopPct:(stop/last-1)*100,
+    risk:`1회 매수 금액의 손실이 전체 자산의 1~2%를 넘지 않게 하려면, 손절폭 ${Math.abs((stop/last-1)*100).toFixed(1)}% 기준으로 비중을 정하세요.`
+  };
+  return {verdict, cls, checks, okN, plan, last, dEarn, earnDate, ma20, ma50, chart:bars.slice(-120)};
+}
+
+function chartSVG(bars){
+  const W=600,H=230,PH=160,pad=6, n=bars.length;
+  const c=bars.map(b=>b.c);
+  const ma=p=>bars.map((_,i)=>smaAt(c,p,i));
+  const all=bars.map(b=>b.c);
+  const lo=Math.min(...bars.map(b=>b.l)), hi=Math.max(...bars.map(b=>b.h));
+  const x=i=>pad+i*(W-2*pad)/(n-1), y=p=>pad+(hi-p)/(hi-lo)*(PH-2*pad);
+  const line=(arr)=>arr.map((p,i)=>p==null?null:`${x(i).toFixed(1)},${y(p).toFixed(1)}`).filter(Boolean).join(" ");
+  const vmax=Math.max(...bars.map(b=>b.v)), bw=Math.max(1,(W-2*pad)/n-1);
+  const vols=bars.map((b,i)=>{const h=(b.v/vmax)*(H-PH-10); const up=i>0&&b.c>=bars[i-1].c;
+    return `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="var(${up?"--up":"--down"})" opacity=".45"/>`;}).join("");
+  // 전체 가격 기준 데이터 120일 중 앞부분 MA는 비어 있음
+  const m20=ma(20), m50=ma(50);
+  const lastY=y(all[n-1]);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="최근 ${n}거래일 가격과 이동평균선">
+    <line x1="0" x2="${W}" y1="${PH}" y2="${PH}" stroke="var(--line)"/>
+    <text x="${W-4}" y="14" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--f-num)">${hi.toFixed(0)}</text>
+    <text x="${W-4}" y="${PH-6}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--f-num)">${lo.toFixed(0)}</text>
+    ${vols}
+    <polyline points="${line(m50)}" fill="none" stroke="var(--warn)" stroke-width="1.5"/>
+    <polyline points="${line(m20)}" fill="none" stroke="var(--up)" stroke-width="1.5"/>
+    <polyline points="${line(all)}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+    <circle cx="${x(n-1).toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" fill="var(--accent)"/>
+  </svg>`;
+}
+
 /* ---------- 예시 데이터(가상) ---------- */
 function exampleData(){
   const mk=(sym,name,ind,o)=>({symbol:sym,example:true,profile:{name,finnhubIndustry:ind},quote:{c:o.c,dp:o.dp},
@@ -342,8 +451,11 @@ const state = {
   W: Object.assign({}, DEFAULT_W, LS.get("ss.w", {})),
   data: LS.get("ss.data", {}),          // symbol -> raw
   tickers: LS.get("ss.tickers", PRESETS["빅테크·AI"]),
-  open: null, running:false, stop:false
+  open: null, running:false, stop:false,
+  timing: LS.get("ss.timing", {}),       // symbol -> {bars, earnDate, ts}
+  tBusy: null, tErr: {}
 };
+const TIMING_MS = 6*3600*1000;
 const $ = id => document.getElementById(id);
 const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
@@ -371,7 +483,10 @@ function renderList(){
     const dp=num(q.dp);
     const bars = FACTORS.map(f=>{const v=r.P[f.id]; return `<div class="bar" title="${esc(f.name)}"><i class="${v?"":"na"}">${v?`<span style="height:${Math.max(4,v.s*100)}%"></span>`:""}</i><em>${f.short}</em></div>`;}).join("");
     const open = state.open===d.symbol;
+    const ta = d.example?null:timingFor(d.symbol);
+    const tchip = ta ? `<span class="chip ${ta.cls==="v-good"?"g-strong":ta.cls==="v-wait"?"g-watch":"flag"}">타이밍: ${esc(ta.verdict.split(" — ")[0])}</span>` : "";
     const detail = open ? `<div class="detail">${FACTORS.map(f=>{const v=r.P[f.id];return `<div class="drow"><span class="lbl">${f.name}</span><span class="muted">${v?esc(v.note):"데이터 없음"}</span><span class="val">${v?Math.round(v.s*100):"–"}</span></div>`;}).join("")}
+      ${d.example?"":timingHTML(d.symbol)}
       <div class="small muted">PER ${r.pe!=null?r.pe.toFixed(0):"–"} · PSR ${r.ps!=null?r.ps.toFixed(1):"–"} · 데이터 반영률 ${Math.round(r.coverage*100)}%${d.ts?` · ${new Date(d.ts).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 기준`:""}</div></div>` : "";
     return `<article class="card" tabindex="0" data-s="${esc(d.symbol)}" aria-expanded="${open}">
       <div class="card-head">
@@ -381,7 +496,7 @@ function renderList(){
         <div class="score"><b>${Math.round(r.total)}</b><div><span class="chip ${GL[r.grade][1]}">${GL[r.grade][0]}</span></div></div>
       </div>
       <div class="bars">${bars}</div>
-      ${r.flags.length?`<div class="row">${r.flags.map(f=>`<span class="chip flag">${esc(f)}</span>`).join("")}</div>`:""}
+      ${(r.flags.length||tchip)?`<div class="row">${tchip}${r.flags.map(f=>`<span class="chip flag">${esc(f)}</span>`).join("")}</div>`:""}
       ${detail}
     </article>`;}).join("")
     : `<div class="panel muted">조건에 맞는 종목이 없습니다. 필터를 바꿔 보세요.</div>`;
@@ -419,6 +534,79 @@ async function loadSymbol(sym, key){
   const rec     = await fh(`/stock/recommendation?symbol=${enc}`, key);
   return {symbol:sym, profile, quote, metric, earnings, rec, ts:Date.now()};
 }
+const ymd = d => d.toISOString().slice(0,10);
+async function loadBars(sym){
+  const fk=LS.get("ss.key",""), ak=LS.get("ss.avkey","");
+  if(fk){
+    const to=Math.floor(Date.now()/1000), from=to-420*86400;
+    try{
+      const j=await fh(`/stock/candle?symbol=${encodeURIComponent(sym)}&resolution=D&from=${from}&to=${to}`, fk);
+      if(j && j.s==="ok" && Array.isArray(j.c) && j.c.length>=60)
+        return j.c.map((c,i)=>({t:ymd(new Date(j.t[i]*1000)),o:j.o[i],h:j.h[i],l:j.l[i],c,v:j.v[i]}));
+    }catch(e){ if(e instanceof TypeError) throw e; }
+  }
+  if(!ak) throw new Error("일봉 데이터가 필요합니다. ‘종목·스캔’ 탭에 Alpha Vantage 키를 넣어 주세요.");
+  const res=await fetch(`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&outputsize=compact&symbol=${encodeURIComponent(sym)}&apikey=${encodeURIComponent(ak)}`);
+  const j=await res.json();
+  const ts=j["Time Series (Daily)"];
+  if(!ts) throw new Error(j.Note||j.Information ? "Alpha Vantage 하루 조회 한도(25회)를 넘었거나 일시 제한입니다. 내일 다시 시도하세요." : (j["Error Message"]?"종목을 찾지 못했습니다.":"일봉 데이터를 받지 못했습니다."));
+  return Object.keys(ts).sort().map(t=>({t,o:+ts[t]["1. open"],h:+ts[t]["2. high"],l:+ts[t]["3. low"],c:+ts[t]["4. close"],v:+ts[t]["5. volume"]}));
+}
+async function loadEarnDate(sym){
+  const fk=LS.get("ss.key",""); if(!fk) return null;
+  const now=new Date(), to=new Date(Date.now()+120*864e5);
+  try{
+    const j=await fh(`/calendar/earnings?from=${ymd(now)}&to=${ymd(to)}&symbol=${encodeURIComponent(sym)}`, fk);
+    const arr=(j&&j.earningsCalendar)||[];
+    const d=arr.map(x=>x.date).filter(Boolean).sort()[0];
+    return d||null;
+  }catch(e){ return null; }
+}
+async function runTiming(sym){
+  if(state.tBusy) return;
+  state.tBusy=sym; delete state.tErr[sym]; renderList();
+  try{
+    const bars=await loadBars(sym);
+    const earnDate=await loadEarnDate(sym);
+    state.timing[sym]={bars, earnDate, ts:Date.now()};
+    LS.set("ss.timing", state.timing);
+  }catch(e){
+    state.tErr[sym] = e instanceof TypeError ? "네트워크 오류입니다. 연결을 확인하세요." : e.message;
+  }
+  state.tBusy=null; renderList();
+}
+function timingFor(sym){
+  const t=state.timing[sym]; if(!t||!t.bars) return null;
+  return analyzeTiming(t.bars, t.earnDate, ymd(new Date()));
+}
+function timingHTML(sym){
+  const busy=state.tBusy===sym, err=state.tErr[sym], t=state.timing[sym];
+  const stale = t && Date.now()-t.ts > TIMING_MS;
+  const btn=`<button class="btn small" data-timing="${esc(sym)}" ${state.tBusy?"disabled":""}>${busy?"분석 중…":t?(stale?"다시 분석(데이터 오래됨)":"다시 분석"):"매수 타이밍 분석"}</button>`;
+  if(!t) return `<div class="timing"><div class="row">${btn}<span class="small muted">일봉 차트로 지금이 들어갈 자리인지 점검합니다.</span></div>${err?`<div class="banner err small">${esc(err)}</div>`:""}</div>`;
+  const a=timingFor(sym);
+  if(!a) return `<div class="timing">${btn}<div class="banner err small">일봉 데이터가 60일보다 짧아 분석할 수 없습니다.</div></div>`;
+  const mk=o=>o===true?`<span class="mk-ok">✓</span>`:o===false?`<span class="mk-no">✕</span>`:`<span class="mk-na">–</span>`;
+  const p=a.plan;
+  return `<div class="timing">
+    <div class="verdict ${a.cls}">${esc(a.verdict)}</div>
+    <div class="small muted">점검 항목 ${a.checks.length}개 중 ${a.okN}개 충족 · ${esc(a.chart[a.chart.length-1].t)} 종가 기준</div>
+    <div class="chart">${chartSVG(a.chart)}</div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>종가</span><span><i style="background:var(--up)"></i>20일선</span><span><i style="background:var(--warn)"></i>50일선</span><span>아래 막대: 거래량</span></div>
+    <div class="stack" style="gap:8px">${a.checks.map(k=>`<div class="chk">${mk(k.ok)}<b>${esc(k.label)}</b><span class="d">${esc(k.d)}</span></div>`).join("")}</div>
+    <h3>참고 가격선</h3>
+    <div class="plan num">
+      <span>1차 관심 구간</span><span>20일선 ${p.zone1.toFixed(2)} 부근</span>
+      <span>2차 관심 구간</span><span>50일선 ${p.zone2.toFixed(2)} 부근</span>
+      <span>반등 확인가</span><span>${p.trigger.toFixed(2)} 위 종가</span>
+      <span>손절 참고선</span><span>${p.stop.toFixed(2)} (현재가 대비 ${p.stopPct.toFixed(1)}%)</span>
+    </div>
+    <p class="small muted">${esc(p.risk)} 이 판단은 차트 패턴의 확률적 경향일 뿐, 조정 이후 상승을 보장하지 않습니다.</p>
+    <div class="row">${btn}</div>
+    ${err?`<div class="banner err small">${esc(err)}</div>`:""}
+  </div>`;
+}
+
 function parseTickers(s){ return [...new Set(String(s).toUpperCase().split(/[\s,;]+/).map(t=>t.trim()).filter(t=>/^[A-Z][A-Z0-9.\-]{0,9}$/.test(t)))]; }
 
 async function run(){
@@ -460,13 +648,17 @@ document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{
   ["rank","univ","weight","why"].forEach(v=>$("v-"+v).hidden = v!==b.dataset.v);
   LS.set("ss.tab", b.dataset.v); window.scrollTo(0,0);
 }));
-$("list").addEventListener("click",e=>{const c=e.target.closest(".card"); if(!c)return; state.open = state.open===c.dataset.s?null:c.dataset.s; renderList();});
+$("list").addEventListener("click",e=>{const tb=e.target.closest("[data-timing]"); if(tb){e.stopPropagation(); runTiming(tb.dataset.timing); return;}
+  if(e.target.closest(".timing")) return;
+  const c=e.target.closest(".card"); if(!c)return; state.open = state.open===c.dataset.s?null:c.dataset.s; renderList();});
 $("list").addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){const c=e.target.closest(".card"); if(c){e.preventDefault(); c.click();}}});
 ["sortSel","gradeSel","hideFlag"].forEach(id=>$(id).addEventListener("change",renderList));
 $("weights").addEventListener("input",e=>{const f=e.target.dataset.f; if(!f)return; state.W[f]=+e.target.value; LS.set("ss.w",state.W);
   const sum=FACTORS.reduce((a,x)=>a+(state.W[x.id]||0),0)||1; document.querySelectorAll(".wt").forEach((el,i)=>{el.querySelector(".num").textContent=Math.round((state.W[FACTORS[i].id]||0)/sum*100)+"%";}); renderList();});
 $("resetW").addEventListener("click",()=>{state.W={...DEFAULT_W}; LS.set("ss.w",state.W); renderWeights(); renderList();});
-$("saveKey").addEventListener("click",()=>{const k=$("apiKey").value.trim(); if(!k){$("keyMsg").textContent="키를 입력하세요.";return;} LS.set("ss.key",k); $("keyMsg").textContent="저장했습니다.";});
+$("saveKey").addEventListener("click",()=>{const k=$("apiKey").value.trim(), a=$("avKey").value.trim();
+  if(!k&&!a){$("keyMsg").textContent="키를 입력하세요.";return;}
+  if(k) LS.set("ss.key",k); if(a) LS.set("ss.avkey",a); $("keyMsg").textContent="저장했습니다.";});
 $("runBtn").addEventListener("click",run);
 $("stopBtn").addEventListener("click",()=>{state.stop=true;});
 $("clearCache").addEventListener("click",()=>{state.data={}; LS.del("ss.data"); $("prog").style.width="0"; $("runMsg").textContent="저장된 데이터를 지웠습니다."; renderList();});
@@ -476,6 +668,7 @@ $("presets").addEventListener("click",e=>{const p=e.target.dataset.p; if(p) $("t
 /* ---------- 시작 ---------- */
 $("tickers").value = state.tickers;
 if(LS.get("ss.key","")) $("apiKey").value = LS.get("ss.key","");
+if(LS.get("ss.avkey","")) $("avKey").value = LS.get("ss.avkey","");
 renderWeights(); renderList();
 const t0 = LS.get("ss.tab","rank"); const tb=document.querySelector(`.tab[data-v="${t0}"]`); if(tb) tb.click();
 </script>
