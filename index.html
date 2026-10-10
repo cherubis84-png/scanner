@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="상승신호">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>상승신호 스캐너</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: 단일 열 카드 목록 + 하단 탭바(아이폰), 넓은 화면은 2열 */
+:root{
+  --bg:#EEF1F4; --surface:#FFFFFF; --ink:#16202B; --muted:#5C6878; --line:#D5DBE2;
+  --accent:#1F4FD8; --accent-soft:#E2E9FB;
+  --up:#0E8A5F; --up-soft:#DDF3EA; --warn:#B26B00; --warn-soft:#FBEED6; --down:#C2372F; --down-soft:#F9E1DF;
+  --f-body:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo",system-ui,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F151C; --surface:#18212B; --ink:#E7ECF2; --muted:#93A0B0; --line:#2B3744;
+  --accent:#7E9EFF; --accent-soft:#1E2A47;
+  --up:#3FCB93; --up-soft:#173329; --warn:#F0B354; --warn-soft:#3A2D17; --down:#FF7F75; --down-soft:#3D1F1D; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F151C; --surface:#18212B; --ink:#E7ECF2; --muted:#93A0B0; --line:#2B3744;
+  --accent:#7E9EFF; --accent-soft:#1E2A47;
+  --up:#3FCB93; --up-soft:#173329; --warn:#F0B354; --warn-soft:#3A2D17; --down:#FF7F75; --down-soft:#3D1F1D; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+:root{padding-top:env(safe-area-inset-top,0px)}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);-webkit-text-size-adjust:100%}
+.wrap{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:16px calc(96px + env(safe-area-inset-bottom,0px))}
+h1,h2,h3{margin:0;text-wrap:balance}
+h1{font-size:22px;font-weight:700;letter-spacing:-.01em}
+h2{font-size:18px;font-weight:700}
+h3{font-size:15px;font-weight:700}
+p{margin:0}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,select,input{font:inherit;color:inherit}
+.btn{border:1px solid var(--line);background:var(--surface);padding:9px 14px;border-radius:10px;cursor:pointer;font-weight:500}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:disabled{opacity:.5;cursor:default}
+input[type=text],input[type=password],select,textarea{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 12px;width:100%;color:var(--ink)}
+textarea{font:14px/1.5 var(--f-num);min-height:90px;resize:vertical}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.banner{border-radius:12px;padding:12px 14px;font-size:14px}
+.banner.info{background:var(--accent-soft)}
+.banner.warn{background:var(--warn-soft)}
+.banner.err{background:var(--down-soft)}
+
+/* 결과 목록 */
+.list{display:grid;grid-template-columns:1fr;gap:10px}
+@media (min-width:760px){.list{grid-template-columns:1fr 1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;cursor:pointer;min-width:0}
+.card-head{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:start}
+.rank{font-family:var(--f-num);color:var(--muted);font-size:14px;padding-top:2px}
+.tick{font-family:var(--f-num);font-weight:600;font-size:17px}
+.name{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.score{text-align:right}
+.score b{font-family:var(--f-num);font-size:26px;font-weight:600;line-height:1}
+.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;font-weight:500;white-space:nowrap}
+.g-strong{background:var(--up-soft);color:var(--up)}
+.g-watch{background:var(--warn-soft);color:var(--warn)}
+.g-weak{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.flag{background:var(--down-soft);color:var(--down)}
+.bars{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.bar{display:flex;flex-direction:column;gap:3px;min-width:0}
+.bar i{display:block;height:28px;background:var(--bg);border-radius:4px;position:relative;overflow:hidden}
+.bar i span{position:absolute;left:0;right:0;bottom:0;background:var(--accent);border-radius:4px}
+.bar i.na{background:repeating-linear-gradient(135deg,var(--bg) 0 4px,var(--line) 4px 5px)}
+.bar em{font-style:normal;font-size:10px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.price{font-size:13px}
+.up{color:var(--up)} .down{color:var(--down)}
+.detail{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+.drow{display:grid;grid-template-columns:110px 1fr 42px;gap:8px;align-items:baseline;font-size:13px}
+.drow .lbl{font-weight:500}
+.drow .val{text-align:right;font-family:var(--f-num)}
+
+/* 탭바 */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom,0px);z-index:10}
+.tab{border:0;background:none;padding:12px 4px 10px;font-size:13px;color:var(--muted);cursor:pointer;font-weight:500}
+.tab[aria-selected=true]{color:var(--accent)}
+.tab[aria-selected=true]::before{content:"";display:block;width:24px;height:3px;border-radius:2px;background:var(--accent);margin:0 auto 6px}
+.tab::before{content:"";display:block;height:3px;margin-bottom:6px}
+
+.progress{height:6px;background:var(--bg);border-radius:4px;overflow:hidden}
+.progress span{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.presets{display:flex;gap:8px;flex-wrap:wrap}
+.wt{display:grid;grid-template-columns:1fr 44px;gap:4px 12px;align-items:center}
+.wt input[type=range]{width:100%;accent-color:var(--accent)}
+.prose{max-width:66ch;display:flex;flex-direction:column;gap:12px}
+.prose ol,.prose ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.case{border-left:3px solid var(--accent);padding-left:12px}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;width:100%;min-width:520px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:12px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">US 주식 · 상승 전 7가지 신호</div>
+      <h1>상승신호 스캐너</h1>
+    </div>
+    <div class="row">
+      <span id="status" class="small muted"></span>
+    </div>
+  </header>
+
+  <!-- 순위 -->
+  <section id="v-rank" class="stack">
+    <div id="rankBanner"></div>
+    <div class="row">
+      <select id="sortSel" aria-label="정렬" style="width:auto">
+        <option value="total">종합 점수순</option>
+        <option value="rs">상대강도순</option>
+        <option value="rev">매출 성장순</option>
+        <option value="trend">신고가 근접순</option>
+      </select>
+      <select id="gradeSel" aria-label="등급" style="width:auto">
+        <option value="all">전체 등급</option>
+        <option value="strong">강한 신호만</option>
+        <option value="watch">관찰 이상</option>
+      </select>
+      <label class="row small muted" style="gap:6px"><input type="checkbox" id="hideFlag"> 위험 표시 종목 숨기기</label>
+    </div>
+    <div id="list" class="list"></div>
+    <p class="small muted">점수는 과거 대형 상승주들이 상승 전에 보였던 신호를 얼마나 갖추었는지를 나타낼 뿐, 앞으로의 수익을 예측하거나 보장하지 않습니다. 투자 권유가 아니며, 최종 판단은 본인 몫입니다.</p>
+  </section>
+
+  <!-- 종목 -->
+  <section id="v-univ" class="stack" hidden>
+    <div class="panel stack">
+      <h2>데이터 연결</h2>
+      <p class="small muted">무료 Finnhub API 키가 필요합니다. finnhub.io에서 가입하면 바로 발급됩니다. 키는 이 기기에만 저장됩니다.</p>
+      <input type="password" id="apiKey" placeholder="Finnhub API 키" autocomplete="off">
+      <div class="row"><button class="btn" id="saveKey">키 저장</button><span id="keyMsg" class="small muted"></span></div>
+    </div>
+    <div class="panel stack">
+      <h2>스캔할 종목</h2>
+      <div class="presets" id="presets"></div>
+      <textarea id="tickers" aria-label="종목 티커 목록" spellcheck="false"></textarea>
+      <p class="small muted">티커를 쉼표나 줄바꿈으로 구분해 입력하세요. 종목당 API 호출 5번, 무료 한도(분당 60회) 때문에 30종목에 약 3분 걸립니다. 받은 데이터는 12시간 동안 재사용합니다.</p>
+      <div class="row">
+        <button class="btn primary" id="runBtn">스캔 시작</button>
+        <button class="btn" id="stopBtn" disabled>중지</button>
+        <button class="btn" id="clearCache">저장된 데이터 지우기</button>
+      </div>
+      <div class="progress" aria-hidden="true"><span id="prog"></span></div>
+      <div id="runMsg" class="small muted"></div>
+    </div>
+  </section>
+
+  <!-- 가중치 -->
+  <section id="v-weight" class="stack" hidden>
+    <div class="panel stack">
+      <h2>신호별 가중치</h2>
+      <p class="small muted">어떤 신호를 더 중요하게 볼지 조정하면 순위가 바로 다시 계산됩니다. 합계는 자동으로 100%로 환산됩니다.</p>
+      <div id="weights" class="stack"></div>
+      <div class="row"><button class="btn" id="resetW">기본값으로</button></div>
+    </div>
+  </section>
+
+  <!-- 원리 -->
+  <section id="v-why" class="stack" hidden>
+    <div class="panel prose">
+      <h2>대세 상승 전에 반복된 신호</h2>
+      <p>엔비디아와 테슬라의 큰 상승은 뉴스 한 번으로 시작되지 않았습니다. 주가가 본격적으로 오르기 전 몇 분기에 걸쳐 실적, 수익성, 주가 흐름에서 같은 방향의 변화가 겹쳤습니다. 이 앱은 그 변화를 7가지 수치로 바꿔 점수를 매깁니다. 윌리엄 오닐의 CAN SLIM과 마크 미너비니의 추세 템플릿에서 검증된 요소를 바탕으로 했습니다.</p>
+      <div class="case">
+        <h3>엔비디아, 2023년</h3>
+        <p class="small">2023년 5월 실적 발표에서 다음 분기 매출 전망을 시장 예상보다 50% 가량 높게 제시했고, 주가가 하루에 20% 넘게 올랐습니다. 그 전부터 주가는 S&amp;P 500보다 강했고, 떨어졌던 매출총이익률이 회복 중이었습니다. 이후 데이터센터 매출이 분기마다 가속하며 전년 대비 세 자릿수 성장으로 이어졌습니다.</p>
+      </div>
+      <div class="case">
+        <h3>테슬라, 2019~2020년</h3>
+        <p class="small">2019년 3분기에 시장 예상을 깨고 흑자를 내자 주가가 하루에 15% 넘게 올랐습니다. 모델 3 생산이 안정되고 상하이 공장이 예정보다 일찍 가동되면서 매출총이익률이 개선되고 현금흐름이 흑자로 돌아섰습니다. 주가는 연말 신고가를 넘었고, 2020년 한 해 동안 몇 배로 올랐습니다.</p>
+      </div>
+      <h3>앱이 보는 7가지 신호</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>신호</th><th>무엇을 보나</th><th>사례</th></tr></thead>
+        <tbody id="factorTbl"></tbody>
+      </table></div>
+      <h3>꼭 알아둘 한계</h3>
+      <ul class="small">
+        <li>생존자 편향: 같은 신호를 보이고도 실패한 종목이 훨씬 많습니다. 2021년 고성장주들은 점수가 높았다가 2022년 크게 하락했습니다.</li>
+        <li>제품 경쟁력, 거대한 시장(AI, 전기차) 같은 질적 요소는 수치로 잡히지 않습니다. 점수가 높은 종목은 사업 내용을 따로 확인하세요.</li>
+        <li>무료 데이터에는 이동평균선과 기관 매수 현황이 없어 추세는 52주 고점 대비 위치로 근사합니다.</li>
+        <li>매수 시점과 손절 기준 같은 위험 관리가 수익률을 더 크게 좌우합니다.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button class="tab" role="tab" data-v="rank" aria-selected="true">순위</button>
+  <button class="tab" role="tab" data-v="univ" aria-selected="false">종목·스캔</button>
+  <button class="tab" role="tab" data-v="weight" aria-selected="false">가중치</button>
+  <button class="tab" role="tab" data-v="why" aria-selected="false">원리</button>
+</nav>
+
+<script>
+"use strict";
+/* ---------- 신호 정의 ---------- */
+const FACTORS = [
+  {id:"rev",   short:"매출",   name:"매출 성장 가속", w:20, what:"분기 매출 전년 대비 성장률, 그리고 성장률이 직전 분기보다 빨라지는지", ex:"엔비디아: 데이터센터 매출이 분기마다 가속"},
+  {id:"eps",   short:"이익",   name:"이익 성장·서프라이즈", w:15, what:"분기 EPS 성장률과 최근 4분기 실적이 예상치를 넘긴 횟수", ex:"테슬라: 2019년 3분기 깜짝 흑자"},
+  {id:"margin",short:"마진",   name:"마진 확장", w:15, what:"매출총이익률·영업이익률이 5년 평균보다 높아졌는지, 영업흑자 전환 여부", ex:"테슬라: 생산 안정 후 이익률 개선"},
+  {id:"rs",    short:"상대강도", name:"시장 대비 상대강도", w:20, what:"13·26·52주 주가 수익률을 S&P 500과 비교", ex:"엔비디아: 2023년 초부터 지수보다 강세"},
+  {id:"trend", short:"신고가", name:"52주 고점 근접", w:15, what:"현재가가 52주 고점에 얼마나 가까운지, 13주 수익률이 플러스인지", ex:"테슬라: 2019년 말 신고가 돌파"},
+  {id:"vol",   short:"거래량", name:"거래량 증가", w:5,  what:"최근 10일 평균 거래량을 3개월 평균과 비교(하락 중이면 감점)", ex:"실적 발표 후 대량 거래와 갭 상승"},
+  {id:"anal",  short:"애널",   name:"애널리스트 상향", w:10, what:"매수 의견 비중과 3개월 전 대비 변화", ex:"전망 상향 후 의견이 매수로 쏠림"}
+];
+const DEFAULT_W = Object.fromEntries(FACTORS.map(f=>[f.id,f.w]));
+
+const PRESETS = {
+  "빅테크·AI": "NVDA, MSFT, AAPL, AMZN, GOOGL, META, AVGO, TSLA, AMD, NFLX, ORCL, TSM",
+  "고성장": "PLTR, CRWD, NET, SNOW, DDOG, SHOP, UBER, APP, ANET, AXON, NOW, PANW, ZS, MDB, HOOD, COIN",
+  "반도체": "NVDA, AMD, AVGO, TSM, MU, ARM, QCOM, MRVL, LRCX, AMAT, KLAC, ASML, SMCI",
+  "헬스케어": "LLY, NVO, ISRG, VRTX, REGN, DXCM, BSX, ABBV"
+};
+
+/* ---------- 저장소 ---------- */
+const LS = {
+  get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},
+  del(k){try{localStorage.removeItem(k)}catch(e){}}
+};
+const CACHE_MS = 12*3600*1000;
+
+/* ---------- 점수 계산 ---------- */
+const num = x => (typeof x==="number" && isFinite(x)) ? x : null;
+const clamp = x => Math.max(0, Math.min(1, x));
+const fmt = (x,d=1) => x==null ? "–" : (x>0?"+":"") + x.toFixed(d);
+const sortSeries = s => Array.isArray(s) ? s.filter(p=>num(p&&p.v)!=null).slice().sort((a,b)=>String(b.period).localeCompare(String(a.period))) : [];
+function yoyAt(s,i){ if(s.length<i+5) return null; const a=s[i].v, b=s[i+4].v; if(b<=0) return null; return (a/b-1)*100; }
+function avg(arr){ const v=arr.filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
+
+function scoreStock(d, W){
+  const m = (d.metric && d.metric.metric) || {};
+  const q = (d.metric && d.metric.series && d.metric.series.quarterly) || {};
+  const P = {};
+
+  // 1 매출 성장 가속
+  { const g = num(m.revenueGrowthQuarterlyYoy) ?? num(m.revenueGrowthTTMYoy);
+    const sp = sortSeries(q.salesPerShare);
+    const y0 = yoyAt(sp,0), y1 = yoyAt(sp,1);
+    if (g!=null){
+      let s = clamp(g/50), note = `분기 매출 ${fmt(g)}% (전년 대비)`;
+      if (y0!=null && y1!=null){ const a=y0-y1; if(a>3){s=clamp(s+0.2);note+=", 성장 가속";} else if(a<-3){s=clamp(s-0.15);note+=", 성장 둔화";} }
+      P.rev={s,note};
+    } }
+
+  // 2 이익 성장·서프라이즈
+  { const e = num(m.epsGrowthQuarterlyYoy) ?? num(m.epsGrowthTTMYoy);
+    const er = (Array.isArray(d.earnings)?d.earnings:[]).filter(x=>num(x.actual)!=null && num(x.estimate)!=null).slice(0,4);
+    const beats = er.filter(x=>x.actual>x.estimate).length;
+    const parts=[], notes=[];
+    if(e!=null){parts.push(clamp(e/60));notes.push(`EPS ${fmt(e)}%`);}
+    if(er.length){parts.push(beats/er.length);notes.push(`예상치 상회 ${beats}/${er.length}분기`);}
+    if(parts.length) P.eps={s:avg(parts),note:notes.join(", ")}; }
+
+  // 3 마진 확장
+  { const gmT=num(m.grossMarginTTM), gm5=num(m.grossMargin5Y), opT=num(m.operatingMarginTTM), op5=num(m.operatingMargin5Y);
+    const diffs=[], notes=[];
+    if(gmT!=null&&gm5!=null){diffs.push(gmT-gm5);notes.push(`매출총이익률 ${gmT.toFixed(0)}% (5년 평균 ${fmt(gmT-gm5,0)}p)`);}
+    if(opT!=null&&op5!=null){diffs.push(opT-op5);notes.push(`영업이익률 ${opT.toFixed(0)}% (${fmt(opT-op5,0)}p)`);}
+    if(diffs.length){ let s=clamp(0.5+avg(diffs)/10);
+      if(opT!=null&&op5!=null&&opT>0&&op5<=0){s=clamp(s+0.2);notes.push("영업흑자 전환");}
+      P.margin={s,note:notes.join(", ")}; } }
+
+  // 4 상대강도
+  { const r13=num(m["priceRelativeToS&P50013Week"]), r26=num(m["priceRelativeToS&P50026Week"]), r52=num(m["priceRelativeToS&P50052Week"]);
+    let tw=0, tv=0; [[r13,.2],[r26,.4],[r52,.4]].forEach(([v,w])=>{if(v!=null){tv+=v*w;tw+=w;}});
+    if(tw>0){ const v=tv/tw; P.rs={s:clamp(0.5+v/60), v, note:`S&P 500 대비 26주 ${fmt(r26,0)}%p, 52주 ${fmt(r52,0)}%p`}; } }
+
+  // 5 52주 고점 근접
+  { const price=num(d.quote&&d.quote.c)||null, hi=num(m["52WeekHigh"]), r13=num(m["13WeekPriceReturnDaily"]);
+    if(price&&hi){ const ratio=price/hi; let s=clamp((ratio-0.7)/0.25); if(r13!=null&&r13<=0)s*=0.6;
+      P.trend={s, v:ratio, note:`52주 고점의 ${(ratio*100).toFixed(0)}%, 13주 수익률 ${fmt(r13,0)}%`}; } }
+
+  // 6 거래량
+  { const v10=num(m["10DayAverageTradingVolume"]), v3=num(m["3MonthAverageTradingVolume"]), r5=num(m["5DayPriceReturnDaily"]);
+    if(v10&&v3){ const r=v10/v3; let s=clamp((r-0.8)/0.7); if(r5!=null&&r5<0)s*=0.5;
+      P.vol={s,note:`10일 평균이 3개월 평균의 ${(r*100).toFixed(0)}%`}; } }
+
+  // 7 애널리스트
+  { const rec=(Array.isArray(d.rec)?d.rec:[]).slice().sort((a,b)=>String(b.period).localeCompare(String(a.period)));
+    const bull=r=>{const t=(r.strongBuy||0)+(r.buy||0)+(r.hold||0)+(r.sell||0)+(r.strongSell||0);return t?((r.strongBuy||0)+(r.buy||0))/t:null;};
+    if(rec.length){ const now=bull(rec[0]); const prev=bull(rec[Math.min(3,rec.length-1)]);
+      if(now!=null){ const delta=prev!=null?now-prev:0; const s=clamp(0.6*now+0.4*clamp(0.5+delta*5));
+        P.anal={s,note:`매수 의견 ${(now*100).toFixed(0)}%`+(prev!=null&&rec.length>1?` (3개월 전 대비 ${fmt(delta*100,0)}%p)`:"")}; } } }
+
+  // 합산
+  let sw=0, tot=0, all=0;
+  FACTORS.forEach(f=>{ const w=W[f.id]||0; all+=w; if(P[f.id]){sw+=w; tot+=P[f.id].s*w;} });
+  const total = sw>0 ? tot/sw*100 : null;
+  const coverage = all>0 ? sw/all : 0;
+
+  // 위험 표시
+  const flags=[];
+  const ps=num(m.psTTM), pe=num(m.peTTM)??num(m.peBasicExclExtraTTM), beta=num(m.beta), de=num(m["totalDebt/totalEquityQuarterly"]);
+  if(ps!=null&&ps>25) flags.push(`고평가 PSR ${ps.toFixed(0)}`);
+  if(pe!=null&&pe<0) flags.push("적자");
+  if(beta!=null&&beta>2) flags.push(`고변동 β${beta.toFixed(1)}`);
+  if(de!=null&&de>2) flags.push("부채 과다");
+  if(P.trend&&P.trend.v<0.6) flags.push("고점 대비 -40% 이상");
+  if(coverage<0.5) flags.push("데이터 부족");
+
+  const grade = total==null?"weak": total>=75?"strong": total>=60?"watch":"weak";
+  return {P,total,coverage,flags,grade,ps,pe};
+}
+
+/* ---------- 예시 데이터(가상) ---------- */
+function exampleData(){
+  const mk=(sym,name,ind,o)=>({symbol:sym,example:true,profile:{name,finnhubIndustry:ind},quote:{c:o.c,dp:o.dp},
+    metric:{metric:o.m,series:{quarterly:{}}},earnings:o.e,rec:o.r,ts:Date.now()});
+  return [
+    mk("예시A","가상 반도체 기업","Semiconductors",{c:142.1,dp:2.4,m:{revenueGrowthQuarterlyYoy:68,epsGrowthQuarterlyYoy:95,grossMarginTTM:66,grossMargin5Y:58,operatingMarginTTM:38,operatingMargin5Y:27,"priceRelativeToS&P50013Week":14,"priceRelativeToS&P50026Week":31,"priceRelativeToS&P50052Week":52,"52WeekHigh":146,"13WeekPriceReturnDaily":19,"10DayAverageTradingVolume":42,"3MonthAverageTradingVolume":33,"5DayPriceReturnDaily":3,psTTM:22,peTTM:48,beta:1.7},
+      e:[{actual:1.1,estimate:.95},{actual:.9,estimate:.82},{actual:.71,estimate:.7},{actual:.6,estimate:.62}],r:[{period:"2026-10",strongBuy:20,buy:25,hold:5,sell:0,strongSell:0},{period:"2026-09"},{period:"2026-08"},{period:"2026-07",strongBuy:15,buy:22,hold:10,sell:1,strongSell:0}]}),
+    mk("예시B","가상 전기차 기업","Automobiles",{c:61.3,dp:-.8,m:{revenueGrowthQuarterlyYoy:22,epsGrowthQuarterlyYoy:140,grossMarginTTM:21,grossMargin5Y:17,operatingMarginTTM:4,operatingMargin5Y:-6,"priceRelativeToS&P50013Week":6,"priceRelativeToS&P50026Week":12,"priceRelativeToS&P50052Week":9,"52WeekHigh":70,"13WeekPriceReturnDaily":8,"10DayAverageTradingVolume":30,"3MonthAverageTradingVolume":28,"5DayPriceReturnDaily":-1,psTTM:6,peTTM:90,beta:2.3},
+      e:[{actual:.12,estimate:-.05},{actual:-.02,estimate:-.08},{actual:-.1,estimate:-.09},{actual:-.2,estimate:-.15}],r:[{period:"2026-10",strongBuy:6,buy:10,hold:14,sell:3,strongSell:1},{period:"2026-07",strongBuy:4,buy:8,hold:16,sell:5,strongSell:1}]}),
+    mk("예시C","가상 소비재 기업","Retail",{c:88.0,dp:.3,m:{revenueGrowthQuarterlyYoy:3,epsGrowthQuarterlyYoy:-6,grossMarginTTM:34,grossMargin5Y:36,operatingMarginTTM:8,operatingMargin5Y:10,"priceRelativeToS&P50013Week":-7,"priceRelativeToS&P50026Week":-15,"priceRelativeToS&P50052Week":-22,"52WeekHigh":118,"13WeekPriceReturnDaily":-4,"10DayAverageTradingVolume":9,"3MonthAverageTradingVolume":11,"5DayPriceReturnDaily":0.5,psTTM:1.2,peTTM:17,beta:.8},
+      e:[{actual:1.0,estimate:1.05},{actual:1.1,estimate:1.08},{actual:.9,estimate:.95},{actual:1.2,estimate:1.2}],r:[{period:"2026-10",strongBuy:3,buy:6,hold:15,sell:2,strongSell:0},{period:"2026-07",strongBuy:4,buy:8,hold:13,sell:1,strongSell:0}]})
+  ];
+}
+
+/* ---------- 상태 ---------- */
+const state = {
+  W: Object.assign({}, DEFAULT_W, LS.get("ss.w", {})),
+  data: LS.get("ss.data", {}),          // symbol -> raw
+  tickers: LS.get("ss.tickers", PRESETS["빅테크·AI"]),
+  open: null, running:false, stop:false
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- 순위 렌더 ---------- */
+function renderList(){
+  const real = Object.values(state.data).filter(d=>!d.error);
+  const usingExample = real.length===0;
+  const rows = (usingExample? exampleData() : real).map(d=>({d, r:scoreStock(d,state.W)})).filter(x=>x.r.total!=null);
+
+  const key = $("sortSel").value, g = $("gradeSel").value, hide = $("hideFlag").checked;
+  const val = x => key==="total" ? x.r.total : (x.r.P[key]? x.r.P[key].s : -1);
+  let list = rows.slice().sort((a,b)=>val(b)-val(a));
+  if(g==="strong") list=list.filter(x=>x.r.grade==="strong");
+  if(g==="watch") list=list.filter(x=>x.r.grade!=="weak");
+  if(hide) list=list.filter(x=>!x.r.flags.length);
+
+  const errs = Object.values(state.data).filter(d=>d.error);
+  $("rankBanner").innerHTML = (state.netError ? `<div class="banner err"><b>데이터를 받지 못했습니다.</b> 이 화면이 미리보기(Claude 앱, 파일 앱)로 열려 있으면 외부 데이터 요청이 막힙니다. 웹 주소(https://…)로 Safari에서 열어 주세요.</div>` : "") + (usingExample
+    ? `<div class="banner warn"><b>예시 화면입니다.</b> 아래 3개는 가상 종목이며 실제 데이터가 아닙니다. ‘종목·스캔’ 탭에서 API 키를 넣고 스캔하면 실제 순위로 바뀝니다.</div>`
+    : (errs.length? `<div class="banner err small">${errs.length}개 종목은 데이터를 받지 못했습니다: ${errs.map(e=>esc(e.symbol)).join(", ")}</div>` : ""));
+
+  const GL={strong:["강한 신호","g-strong"],watch:["관찰","g-watch"],weak:["약함","g-weak"]};
+  $("list").innerHTML = list.length ? list.map((x,i)=>{
+    const {d,r}=x, p=d.profile||{}, q=d.quote||{};
+    const dp=num(q.dp);
+    const bars = FACTORS.map(f=>{const v=r.P[f.id]; return `<div class="bar" title="${esc(f.name)}"><i class="${v?"":"na"}">${v?`<span style="height:${Math.max(4,v.s*100)}%"></span>`:""}</i><em>${f.short}</em></div>`;}).join("");
+    const open = state.open===d.symbol;
+    const detail = open ? `<div class="detail">${FACTORS.map(f=>{const v=r.P[f.id];return `<div class="drow"><span class="lbl">${f.name}</span><span class="muted">${v?esc(v.note):"데이터 없음"}</span><span class="val">${v?Math.round(v.s*100):"–"}</span></div>`;}).join("")}
+      <div class="small muted">PER ${r.pe!=null?r.pe.toFixed(0):"–"} · PSR ${r.ps!=null?r.ps.toFixed(1):"–"} · 데이터 반영률 ${Math.round(r.coverage*100)}%${d.ts?` · ${new Date(d.ts).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 기준`:""}</div></div>` : "";
+    return `<article class="card" tabindex="0" data-s="${esc(d.symbol)}" aria-expanded="${open}">
+      <div class="card-head">
+        <span class="rank">${i+1}</span>
+        <div style="min-width:0"><div class="tick">${esc(d.symbol)}</div><div class="name">${esc(p.name||"")}${p.finnhubIndustry?" · "+esc(p.finnhubIndustry):""}</div>
+          <div class="price num">${num(q.c)!=null?"$"+q.c.toFixed(2):""} <span class="${dp>0?"up":dp<0?"down":""}">${dp!=null?fmt(dp,2)+"%":""}</span></div></div>
+        <div class="score"><b>${Math.round(r.total)}</b><div><span class="chip ${GL[r.grade][1]}">${GL[r.grade][0]}</span></div></div>
+      </div>
+      <div class="bars">${bars}</div>
+      ${r.flags.length?`<div class="row">${r.flags.map(f=>`<span class="chip flag">${esc(f)}</span>`).join("")}</div>`:""}
+      ${detail}
+    </article>`;}).join("")
+    : `<div class="panel muted">조건에 맞는 종목이 없습니다. 필터를 바꿔 보세요.</div>`;
+  const n=real.length; $("status").textContent = n? `${n}종목 분석됨` : "";
+}
+
+/* ---------- 가중치 ---------- */
+function renderWeights(){
+  const sum = FACTORS.reduce((a,f)=>a+(state.W[f.id]||0),0)||1;
+  $("weights").innerHTML = FACTORS.map(f=>`<div class="wt"><label for="w_${f.id}">${f.name}</label><span class="num small" style="text-align:right">${Math.round((state.W[f.id]||0)/sum*100)}%</span>
+    <input type="range" id="w_${f.id}" min="0" max="40" step="1" value="${state.W[f.id]||0}" data-f="${f.id}"><span></span></div>`).join("");
+}
+
+/* ---------- 데이터 받기 ---------- */
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let lastCall = 0;
+async function fh(path, key){
+  const wait = 1050 - (Date.now()-lastCall); if(wait>0) await sleep(wait);
+  lastCall = Date.now();
+  const url = `https://finnhub.io/api/v1${path}${path.includes("?")?"&":"?"}token=${encodeURIComponent(key)}`;
+  let res = await fetch(url);
+  if(res.status===429){ await sleep(6000); lastCall=Date.now(); res = await fetch(url); }
+  if(res.status===401) throw new Error("API 키가 올바르지 않습니다.");
+  if(res.status===403) return null; // 무료 등급에서 막힌 항목은 건너뜀
+  if(!res.ok) throw new Error(`서버 응답 ${res.status}`);
+  return res.json();
+}
+async function loadSymbol(sym, key){
+  const enc = encodeURIComponent(sym);
+  const profile = await fh(`/stock/profile2?symbol=${enc}`, key);
+  const quote   = await fh(`/quote?symbol=${enc}`, key);
+  if(!quote || !num(quote.c)) return {symbol:sym, error:"시세 없음", ts:Date.now()};
+  const metric  = await fh(`/stock/metric?symbol=${enc}&metric=all`, key);
+  const earnings= await fh(`/stock/earnings?symbol=${enc}`, key);
+  const rec     = await fh(`/stock/recommendation?symbol=${enc}`, key);
+  return {symbol:sym, profile, quote, metric, earnings, rec, ts:Date.now()};
+}
+function parseTickers(s){ return [...new Set(String(s).toUpperCase().split(/[\s,;]+/).map(t=>t.trim()).filter(t=>/^[A-Z][A-Z0-9.\-]{0,9}$/.test(t)))]; }
+
+async function run(){
+  const key = LS.get("ss.key","");
+  if(!key){ $("runMsg").textContent="먼저 Finnhub API 키를 저장하세요."; return; }
+  const list = parseTickers($("tickers").value);
+  if(!list.length){ $("runMsg").textContent="스캔할 티커를 입력하세요."; return; }
+  state.tickers = list.join(", "); LS.set("ss.tickers", state.tickers);
+  // 목록에서 빠진 종목 제거
+  Object.keys(state.data).forEach(s=>{ if(!list.includes(s)) delete state.data[s]; });
+  state.running=true; state.stop=false; $("runBtn").disabled=true; $("stopBtn").disabled=false;
+  let done=0;
+  for(const sym of list){
+    if(state.stop) break;
+    const c = state.data[sym];
+    if(!(c && !c.error && Date.now()-c.ts < CACHE_MS)){
+      $("runMsg").textContent = `${sym} 받는 중… (${done+1}/${list.length})`;
+      try{ state.data[sym] = await loadSymbol(sym, key); state.netError=false; }
+      catch(e){
+        if(/API 키/.test(e.message)){ $("runMsg").textContent=e.message; break; }
+        if(e instanceof TypeError){ state.netError=true; renderList(); $("runMsg").textContent="네트워크 오류입니다. 인터넷 연결을 확인하세요. 웹 주소로 열었는지(파일 미리보기가 아닌지)도 확인하세요."; break; }
+        state.data[sym] = {symbol:sym, error:e.message, ts:Date.now()};
+      }
+      LS.set("ss.data", state.data);
+      renderList();
+    }
+    done++; $("prog").style.width = (done/list.length*100)+"%";
+  }
+  state.running=false; $("runBtn").disabled=false; $("stopBtn").disabled=true;
+  if(!/오류|API 키/.test($("runMsg").textContent)) $("runMsg").textContent = state.stop? `중지됨 (${done}/${list.length})` : `완료: ${done}종목. ‘순위’ 탭에서 확인하세요.`;
+}
+
+/* ---------- 원리 표 ---------- */
+$("factorTbl").innerHTML = FACTORS.map(f=>`<tr><td><b>${f.name}</b></td><td>${f.what}</td><td class="muted">${f.ex}</td></tr>`).join("");
+
+/* ---------- 이벤트 ---------- */
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected", x===b));
+  ["rank","univ","weight","why"].forEach(v=>$("v-"+v).hidden = v!==b.dataset.v);
+  LS.set("ss.tab", b.dataset.v); window.scrollTo(0,0);
+}));
+$("list").addEventListener("click",e=>{const c=e.target.closest(".card"); if(!c)return; state.open = state.open===c.dataset.s?null:c.dataset.s; renderList();});
+$("list").addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){const c=e.target.closest(".card"); if(c){e.preventDefault(); c.click();}}});
+["sortSel","gradeSel","hideFlag"].forEach(id=>$(id).addEventListener("change",renderList));
+$("weights").addEventListener("input",e=>{const f=e.target.dataset.f; if(!f)return; state.W[f]=+e.target.value; LS.set("ss.w",state.W);
+  const sum=FACTORS.reduce((a,x)=>a+(state.W[x.id]||0),0)||1; document.querySelectorAll(".wt").forEach((el,i)=>{el.querySelector(".num").textContent=Math.round((state.W[FACTORS[i].id]||0)/sum*100)+"%";}); renderList();});
+$("resetW").addEventListener("click",()=>{state.W={...DEFAULT_W}; LS.set("ss.w",state.W); renderWeights(); renderList();});
+$("saveKey").addEventListener("click",()=>{const k=$("apiKey").value.trim(); if(!k){$("keyMsg").textContent="키를 입력하세요.";return;} LS.set("ss.key",k); $("keyMsg").textContent="저장했습니다.";});
+$("runBtn").addEventListener("click",run);
+$("stopBtn").addEventListener("click",()=>{state.stop=true;});
+$("clearCache").addEventListener("click",()=>{state.data={}; LS.del("ss.data"); $("prog").style.width="0"; $("runMsg").textContent="저장된 데이터를 지웠습니다."; renderList();});
+$("presets").innerHTML = Object.keys(PRESETS).map(k=>`<button class="btn small" data-p="${esc(k)}">${esc(k)}</button>`).join("");
+$("presets").addEventListener("click",e=>{const p=e.target.dataset.p; if(p) $("tickers").value=PRESETS[p];});
+
+/* ---------- 시작 ---------- */
+$("tickers").value = state.tickers;
+if(LS.get("ss.key","")) $("apiKey").value = LS.get("ss.key","");
+renderWeights(); renderList();
+const t0 = LS.get("ss.tab","rank"); const tb=document.querySelector(`.tab[data-v="${t0}"]`); if(tb) tb.click();
+</script>
+</body>
+</html>
