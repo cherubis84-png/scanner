@@ -106,6 +106,16 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border
 table{border-collapse:collapse;font-size:13px;width:100%;min-width:520px}
 th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-weight:500;color:var(--muted);font-size:12px}
+/* 종목 검색 */
+.search{display:flex;flex-direction:column;gap:6px}
+.qres{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.qrow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line)}
+.qrow:last-child{border-bottom:0}
+.qrow div{min-width:0}
+.qrow .tk{font-family:var(--f-num);font-weight:600}
+.qrow .nm{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qnote{padding:9px 12px;font-size:12px;color:var(--muted)}
+.btn.small{padding:6px 12px;font-size:13px}
 /* 타이밍 분석 */
 .timing{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:10px}
 .verdict{border-radius:10px;padding:10px 12px;font-weight:700;font-size:15px}
@@ -169,7 +179,13 @@ th{font-weight:500;color:var(--muted);font-size:12px}
     </div>
     <div class="panel stack">
       <h2>스캔할 종목</h2>
+      <div class="search">
+        <input type="search" id="q" placeholder="종목 검색 (예: 엔비디아, 팔란티어, PLTR)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <div id="qRes" class="qres" hidden></div>
+      </div>
+      <div class="row small muted">프리셋 추가:</div>
       <div class="presets" id="presets"></div>
+      <div class="row" style="justify-content:space-between"><span id="tcount" class="small muted"></span><button class="btn small" id="clearT">목록 비우기</button></div>
       <textarea id="tickers" aria-label="종목 티커 목록" spellcheck="false"></textarea>
       <p class="small muted">티커를 쉼표나 줄바꿈으로 구분해 입력하세요. 종목당 API 호출 5번, 무료 한도(분당 60회) 때문에 30종목에 약 3분 걸립니다. 받은 데이터는 12시간 동안 재사용합니다.</p>
       <div class="row">
@@ -250,6 +266,171 @@ const PRESETS = {
   "반도체": "NVDA, AMD, AVGO, TSM, MU, ARM, QCOM, MRVL, LRCX, AMAT, KLAC, ASML, SMCI",
   "헬스케어": "LLY, NVO, ISRG, VRTX, REGN, DXCM, BSX, ABBV"
 };
+
+/* ---------- 한글 종목명 사전 (티커|한글명|별칭) ---------- */
+const KR_NAMES = `AAPL|애플
+MSFT|마이크로소프트|마소
+NVDA|엔비디아
+AMZN|아마존
+GOOGL|알파벳|구글
+META|메타|페이스북
+TSLA|테슬라
+AVGO|브로드컴
+AMD|AMD|에이엠디
+NFLX|넷플릭스
+ORCL|오라클
+TSM|TSMC|대만반도체
+PLTR|팔란티어
+CRWD|크라우드스트라이크
+NET|클라우드플레어
+SNOW|스노우플레이크
+DDOG|데이터독
+SHOP|쇼피파이
+UBER|우버
+APP|앱러빈
+ANET|아리스타 네트웍스|아리스타
+AXON|액손
+NOW|서비스나우
+PANW|팔로알토 네트웍스|팔로알토
+ZS|지스케일러
+MDB|몽고DB|몽고디비
+HOOD|로빈후드
+COIN|코인베이스
+MU|마이크론
+ARM|ARM 홀딩스|암홀딩스
+QCOM|퀄컴
+MRVL|마벨 테크놀로지|마벨
+LRCX|램리서치
+AMAT|어플라이드 머티리얼즈
+KLAC|KLA
+ASML|ASML
+SMCI|슈퍼마이크로
+INTC|인텔
+TXN|텍사스 인스트루먼트
+ADI|아날로그 디바이스
+ON|온세미
+LLY|일라이 릴리|릴리
+NVO|노보 노디스크
+ISRG|인튜이티브 서지컬
+VRTX|버텍스
+REGN|리제네론
+DXCM|덱스콤
+BSX|보스턴 사이언티픽
+ABBV|애브비
+UNH|유나이티드헬스
+JNJ|존슨앤드존슨|존슨앤존슨
+PFE|화이자
+MRK|머크
+AMGN|암젠
+TMO|써모피셔
+ABT|애보트
+BRK.B|버크셔 해서웨이|버크셔
+JPM|JP모건|제이피모건
+BAC|뱅크오브아메리카
+GS|골드만삭스
+MS|모건스탠리
+V|비자
+MA|마스터카드
+PYPL|페이팔
+AXP|아메리칸 익스프레스
+SOFI|소파이
+WMT|월마트
+COST|코스트코
+HD|홈디포
+MCD|맥도날드
+KO|코카콜라
+PEP|펩시코|펩시
+SBUX|스타벅스
+NKE|나이키
+DIS|디즈니
+T|AT&T
+VZ|버라이즌
+XOM|엑슨모빌
+CVX|셰브론
+BA|보잉
+LMT|록히드마틴
+RTX|RTX|레이시온
+GE|GE 에어로스페이스
+GEV|GE 버노바
+CAT|캐터필러
+DE|디어
+HON|하니웰
+ADBE|어도비
+CRM|세일즈포스
+INTU|인튜이트
+IBM|IBM
+CSCO|시스코
+DELL|델
+SNPS|시놉시스
+CDNS|케이던스
+WDAY|워크데이
+TEAM|아틀라시안
+RBLX|로블록스
+SPOT|스포티파이
+ABNB|에어비앤비
+BKNG|부킹홀딩스
+DASH|도어대시
+PDD|PDD 홀딩스|핀둬둬|테무
+BABA|알리바바
+JD|징둥
+BIDU|바이두
+NIO|니오
+LI|리오토
+XPEV|샤오펑
+RIVN|리비안
+LCID|루시드
+F|포드
+GM|제너럴모터스|GM
+MSTR|스트래티지|마이크로스트래티지
+IONQ|아이온큐
+RGTI|리게티
+QBTS|디웨이브
+SOUN|사운드하운드
+AI|C3.ai|씨쓰리에이아이
+PATH|유아이패스
+RKLB|로켓랩
+ASTS|AST 스페이스모바일
+VST|비스트라
+CEG|컨스텔레이션 에너지
+OKLO|오클로
+SMR|뉴스케일
+NEE|넥스트에라 에너지|넥스테라
+FSLR|퍼스트솔라
+ENPH|엔페이즈
+CVNA|카바나
+MELI|메르카도리브레
+NU|누홀딩스
+SE|씨 리미티드
+CPNG|쿠팡
+TTD|트레이드 데스크
+DUOL|듀오링고
+CELH|셀시어스
+LULU|룰루레몬
+CMG|치폴레
+TGT|타깃
+VRT|버티브
+ETN|이튼
+CRWV|코어위브
+NBIS|네비우스
+ALAB|아스테라 랩스
+CRDO|크레도
+COHR|코히런트
+WDC|웨스턴디지털
+STX|씨게이트
+SNDK|샌디스크
+OKTA|옥타
+TWLO|트윌리오
+ROKU|로쿠
+PINS|핀터레스트
+SNAP|스냅
+PG|프록터앤드갬블|P&G
+UPS|UPS
+LIN|린데
+ACN|액센츄어
+QQQ|QQQ 나스닥100 ETF
+SPY|SPY S&P500 ETF`.split("\n").map(l=>{const [t,...n]=l.split("|"); return {t, name:n[0], alias:n};});
+const KR_BY_T = Object.fromEntries(KR_NAMES.map(x=>[x.t,x.name]));
+const norm = s => String(s||"").toLowerCase().replace(/[\s·.\-&]/g,"");
 
 /* ---------- 저장소 ---------- */
 const LS = {
@@ -491,7 +672,7 @@ function renderList(){
     return `<article class="card" tabindex="0" data-s="${esc(d.symbol)}" aria-expanded="${open}">
       <div class="card-head">
         <span class="rank">${i+1}</span>
-        <div style="min-width:0"><div class="tick">${esc(d.symbol)}</div><div class="name">${esc(p.name||"")}${p.finnhubIndustry?" · "+esc(p.finnhubIndustry):""}</div>
+        <div style="min-width:0"><div class="tick">${esc(d.symbol)}</div><div class="name">${KR_BY_T[d.symbol]&&KR_BY_T[d.symbol]!==d.symbol?esc(KR_BY_T[d.symbol])+" · ":""}${esc(p.name||"")}${p.finnhubIndustry?" · "+esc(p.finnhubIndustry):""}</div>
           <div class="price num">${num(q.c)!=null?"$"+q.c.toFixed(2):""} <span class="${dp>0?"up":dp<0?"down":""}">${dp!=null?fmt(dp,2)+"%":""}</span></div></div>
         <div class="score"><b>${Math.round(r.total)}</b><div><span class="chip ${GL[r.grade][1]}">${GL[r.grade][0]}</span></div></div>
       </div>
@@ -609,6 +790,52 @@ function timingHTML(sym){
 
 function parseTickers(s){ return [...new Set(String(s).toUpperCase().split(/[\s,;]+/).map(t=>t.trim()).filter(t=>/^[A-Z][A-Z0-9.\-]{0,9}$/.test(t)))]; }
 
+/* ---------- 종목 검색 ---------- */
+function curTickers(){ return parseTickers($("tickers").value); }
+function setTickers(list){ $("tickers").value = list.join(", "); state.tickers=$("tickers").value; LS.set("ss.tickers", state.tickers); updateCount(); }
+function addTickers(arr){ const cur=curTickers(); arr.forEach(t=>{ if(!cur.includes(t)) cur.push(t); }); setTickers(cur); }
+function updateCount(){ const n=curTickers().length; $("tcount").textContent = `현재 ${n}종목` + (n?` · 스캔 약 ${Math.max(1,Math.ceil(n/12))}분`:""); }
+function localSearch(q){
+  const nq=norm(q), uq=q.trim().toUpperCase(); if(!nq) return [];
+  const hits=[];
+  KR_NAMES.forEach(x=>{
+    let s=0;
+    if(x.t===uq) s=100; else if(x.t.startsWith(uq)) s=80;
+    x.alias.forEach(a=>{ const na=norm(a); if(na===nq) s=Math.max(s,95); else if(na.startsWith(nq)) s=Math.max(s,70); else if(na.includes(nq)) s=Math.max(s,50); });
+    if(s) hits.push({t:x.t, name:x.name, s});
+  });
+  return hits.sort((a,b)=>b.s-a.s).slice(0,8);
+}
+let qTimer=null, qSeq=0, qRemote=[];
+function renderSearch(q, local, remote, note){
+  const box=$("qRes"); if(!q.trim()){ box.hidden=true; return; }
+  const cur=curTickers(), seen=new Set();
+  const rows=[...local, ...remote].filter(x=>{ if(seen.has(x.t)) return false; seen.add(x.t); return true; }).slice(0,10);
+  box.innerHTML = rows.map(x=>{ const has=cur.includes(x.t);
+    return `<div class="qrow"><div><div class="tk">${esc(x.t)}</div><div class="nm">${esc(x.name||"")}</div></div>
+      <button class="btn small" data-add="${esc(x.t)}" ${has?"disabled":""}>${has?"추가됨":"추가"}</button></div>`; }).join("")
+    + (note?`<div class="qnote">${esc(note)}</div>`:"")
+    + (!rows.length&&!note?`<div class="qnote">찾는 종목이 없습니다. 영문 회사명이나 티커로 검색해 보세요.</div>`:"");
+  box.hidden=false;
+}
+function onSearch(){
+  const q=$("q").value, local=localSearch(q); qRemote=[];
+  const ascii=/^[A-Za-z0-9 .\-&]+$/.test(q.trim()), key=LS.get("ss.key","");
+  renderSearch(q, local, [], ascii&&key&&q.trim()?"온라인 검색 중…":"");
+  clearTimeout(qTimer);
+  if(!(ascii&&key&&q.trim())) return;
+  const my=++qSeq;
+  qTimer=setTimeout(async()=>{
+    try{
+      const j=await fh(`/search?q=${encodeURIComponent(q.trim())}&exchange=US`, key);
+      if(my!==qSeq) return;
+      qRemote=((j&&j.result)||[]).filter(r=>r.symbol && !/\s/.test(r.symbol) && (r.type==="Common Stock"||r.type==="ADR"||r.type==="ETP"||!r.type))
+        .slice(0,8).map(r=>({t:r.symbol, name:(KR_BY_T[r.symbol]?KR_BY_T[r.symbol]+" · ":"")+r.description}));
+      renderSearch(q, local, qRemote, "");
+    }catch(e){ if(my===qSeq) renderSearch(q, local, [], "온라인 검색에 실패했습니다. 티커를 직접 입력해도 됩니다."); }
+  },600);
+}
+
 async function run(){
   const key = LS.get("ss.key","");
   if(!key){ $("runMsg").textContent="먼저 Finnhub API 키를 저장하세요."; return; }
@@ -663,10 +890,18 @@ $("runBtn").addEventListener("click",run);
 $("stopBtn").addEventListener("click",()=>{state.stop=true;});
 $("clearCache").addEventListener("click",()=>{state.data={}; LS.del("ss.data"); $("prog").style.width="0"; $("runMsg").textContent="저장된 데이터를 지웠습니다."; renderList();});
 $("presets").innerHTML = Object.keys(PRESETS).map(k=>`<button class="btn small" data-p="${esc(k)}">${esc(k)}</button>`).join("");
-$("presets").addEventListener("click",e=>{const p=e.target.dataset.p; if(p) $("tickers").value=PRESETS[p];});
+$("presets").addEventListener("click",e=>{const p=e.target.dataset.p; if(p){ addTickers(parseTickers(PRESETS[p])); $("runMsg").textContent=`‘${p}’ 종목을 목록에 더했습니다.`; }});
+$("q").addEventListener("input",onSearch);
+$("q").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const b=$("qRes").querySelector("[data-add]:not([disabled])"); if(b) b.click(); }});
+$("qRes").addEventListener("click",e=>{const b=e.target.closest("[data-add]"); if(!b)return; addTickers([b.dataset.add]); b.textContent="추가됨"; b.disabled=true; $("runMsg").textContent=`${b.dataset.add}를 추가했습니다. ‘스캔 시작’을 누르면 반영됩니다.`;});
+$("tickers").addEventListener("input",()=>{ state.tickers=$("tickers").value; LS.set("ss.tickers",state.tickers); updateCount(); });
+let clearArm=null;
+$("clearT").addEventListener("click",()=>{ const b=$("clearT");
+  if(!clearArm){ b.textContent="한 번 더 누르면 비웁니다"; clearArm=setTimeout(()=>{clearArm=null; b.textContent="목록 비우기";},3000); return; }
+  clearTimeout(clearArm); clearArm=null; b.textContent="목록 비우기"; setTickers([]); });
 
 /* ---------- 시작 ---------- */
-$("tickers").value = state.tickers;
+$("tickers").value = state.tickers; updateCount();
 if(LS.get("ss.key","")) $("apiKey").value = LS.get("ss.key","");
 if(LS.get("ss.avkey","")) $("avKey").value = LS.get("ss.avkey","");
 renderWeights(); renderList();
