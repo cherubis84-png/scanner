@@ -108,6 +108,8 @@ th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertic
 th{font-weight:500;color:var(--muted);font-size:12px}
 .keyf{font-family:var(--f-num)!important;-webkit-text-security:disc}
 .keyf.show{-webkit-text-security:none}
+.advice{display:flex;flex-direction:column;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.advice ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
 /* 종목 검색 */
 .search{display:flex;flex-direction:column;gap:6px}
 .qres{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
@@ -140,7 +142,7 @@ th{font-weight:500;color:var(--muted);font-size:12px}
 <div class="wrap">
   <header class="top">
     <div>
-      <div class="eyebrow">US 주식 · 상승 전 7가지 신호 · 버전 5</div>
+      <div class="eyebrow">US 주식 · 상승 전 7가지 신호 · 버전 6</div>
       <h1>상승신호 스캐너</h1>
     </div>
     <div class="row">
@@ -730,7 +732,7 @@ function renderList(){
     const open = state.open===d.symbol;
     const ta = d.example?null:timingFor(d.symbol);
     const tchip = ta ? `<span class="chip ${ta.cls==="v-good"?"g-strong":ta.cls==="v-wait"?"g-watch":"flag"}">타이밍: ${esc(ta.verdict.split(" — ")[0])}</span>` : "";
-    const detail = open ? `<div class="detail">${FACTORS.map(f=>{const v=r.P[f.id];return `<div class="drow"><span class="lbl">${f.name}</span><span class="muted">${v?esc(v.note):"데이터 없음"}</span><span class="val">${v?Math.round(v.s*100):"–"}</span></div>`;}).join("")}
+    const detail = open ? `<div class="detail">${d.example?"":adviceHTML(d.symbol, r)}${FACTORS.map(f=>{const v=r.P[f.id];return `<div class="drow"><span class="lbl">${f.name}</span><span class="muted">${v?esc(v.note):"데이터 없음"}</span><span class="val">${v?Math.round(v.s*100):"–"}</span></div>`;}).join("")}
       ${r.warns.length?`<div class="banner err small"><b>실적·수급 하락 경고</b><br>${r.warns.map(esc).join("<br>")}</div>`:""}
       ${d.example?"":timingHTML(d.symbol)}
       <div class="small muted">PER ${r.pe!=null?r.pe.toFixed(0):"–"} · PSR ${r.ps!=null?r.ps.toFixed(1):"–"} · 데이터 반영률 ${Math.round(r.coverage*100)}%${d.ts?` · ${new Date(d.ts).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 기준`:""}</div></div>` : "";
@@ -748,6 +750,57 @@ function renderList(){
     : `<div class="panel muted">조건에 맞는 종목이 없습니다. 필터를 바꿔 보세요.</div>`;
   const n=real.length; $("status").textContent = n? `${n}종목 분석됨` : "";
   renderMarket();
+}
+
+/* 종목별 종합 조언 (규칙 기반) */
+function adviceFor(sym, r, a){
+  const mk = state.timing.QQQ ? timingFor("QQQ") : null;
+  const mD = mk ? mk.danger.score : null;
+  const hold=[], buy=[]; let head, cls;
+  const f2=x=>x.toFixed(2);
+  if(!a){
+    head = r.warns.length>=2 ? "실적·수급 경고가 여러 개입니다" : r.grade==="strong" ? "종목 체력은 좋습니다" : "종목 체력은 보통 이하입니다";
+    cls = r.warns.length>=2 ? "v-bad" : r.grade==="strong" ? "v-good" : "v-wait";
+    hold.push("차트 위험 신호는 ‘매수 타이밍 분석’을 눌러야 함께 판단됩니다.");
+    if(r.warns.length) hold.push(`실적·수급 경고 ${r.warns.length}개: ${r.warns.join(", ")}. 다음 실적 발표에서 개선되는지 확인하세요.`);
+    buy.push(r.total<60 ? "체력 점수가 60점 미만입니다. 점수가 높은 다른 후보를 먼저 보세요." : "매수 시점은 타이밍 분석으로 20일선·50일선 위치와 반등 여부를 확인한 뒤 정하세요.");
+    return {head, cls, hold, buy};
+  }
+  const d=a.danger.score, last=a.last, p=a.plan, below50=last<a.ma50, earn=a.dEarn!=null&&a.dEarn<=14;
+  // 보유 중
+  if(d>=5 || (below50 && d>=3)){ hold.push(`위험 신호가 강합니다. 비중 축소를 검토하고, 손절 참고선 ${f2(p.stop)} 아래로 마감하면 정리를 고려하세요.`); }
+  else if(d>=3){ hold.push(`일부 이익 실현을 검토하거나, 손절선을 50일선 ${f2(a.ma50)} 바로 아래로 올려 이익을 지키세요.`); }
+  else if(d>=1){ hold.push(`보유는 유지하되 50일선 ${f2(a.ma50)}을 종가로 깨는지 지켜보세요. 깨면 비중을 줄이는 것이 일반적입니다.`); }
+  else { hold.push(`추세가 유지되고 있습니다. 손절 참고선 ${f2(p.stop)}만 정해 두고 보유하는 구간입니다.`); }
+  if(a.danger.list.length) hold.push("근거: "+a.danger.list.map(x=>x.t).join(", "));
+  if(r.warns.length) hold.push(`실적·수급 경고 ${r.warns.length}개: ${r.warns.join(", ")}.`);
+  if(earn) hold.push(`실적 발표 ${a.dEarn}일 전(${a.earnDate})입니다. 발표 당일 큰 폭 등락이 잦으니, 감당할 수 있는 비중인지 점검하세요.`);
+  if(mD!=null && mD>=3) hold.push(`시장(QQQ) 하락 위험이 ‘${mk.danger.level}’입니다. 종목이 좋아도 함께 밀릴 수 있습니다.`);
+  // 신규 매수
+  if(d>=4) buy.push("하락 위험 신호가 많아 신규 매수는 보류하는 편이 낫습니다. 신호가 줄고 50일선 위에서 다시 힘을 보일 때까지 기다리세요.");
+  else if(mD!=null && mD>=3) buy.push("시장 전체가 경계 구간이라 신규 매수는 평소보다 작게, 또는 시장 회복 후로 미루는 것이 일반적입니다.");
+  else if(a.cls==="v-good") buy.push(`조정 후 반등 신호가 있습니다. 나눠서 사는 경우 1차 매수 구간이며, 손절 참고선은 ${f2(p.stop)} (${p.stopPct.toFixed(1)}%)입니다.`);
+  else if(a.verdict.startsWith("과열")) buy.push(`과열 구간입니다. 추격 매수보다 20일선 ${f2(p.zone1)} 부근까지 눌릴 때를 기다리세요.`);
+  else if(a.verdict.startsWith("깊은 조정")||a.verdict.startsWith("추세 훼손")) buy.push(`50일선 ${f2(a.ma50)}을 다시 회복하기 전까지는 관망하는 구간입니다.`);
+  else if(a.verdict.startsWith("고점 부근")) buy.push(`고점 근처입니다. 거래량을 동반한 신고가 돌파를 확인하거나, 20일선 ${f2(p.zone1)}까지의 눌림을 기다리세요.`);
+  else buy.push(`조정 중입니다. 20일선 ${f2(p.zone1)} 부근에서 지지되고, 종가가 ${f2(p.trigger)} 위로 올라서면 반등 확인입니다.`);
+  if(r.total<60) buy.push("종목 체력 점수가 60점 미만이라 우선순위는 낮습니다.");
+  if(earn && d<4) buy.push(`실적 발표(${a.earnDate}) 이후로 매수를 미루면 발표 위험을 피할 수 있습니다.`);
+  if(d>=5||(below50&&d>=3)){ head="위험 신호 강함 — 방어 우선"; cls="v-bad"; }
+  else if(d>=3||(mD!=null&&mD>=3)){ head="경계 구간 — 비중과 손절선 점검"; cls="v-bad"; }
+  else if(a.cls==="v-good" && !r.warns.length){ head="양호 — 계획한 가격선 안에서 대응"; cls="v-good"; }
+  else { head="관찰 — 조건 충족을 기다릴 구간"; cls="v-wait"; }
+  return {head, cls, hold, buy};
+}
+function adviceHTML(sym, r){
+  const a = timingFor(sym), ad = adviceFor(sym, r, a);
+  const li = arr => arr.map(x=>`<li>${esc(x)}</li>`).join("");
+  return `<div class="advice">
+    <div class="verdict ${ad.cls}">종합 조언: ${esc(ad.head)}</div>
+    <h3>보유 중이라면</h3><ul class="small">${li(ad.hold)}</ul>
+    <h3>새로 사려고 한다면</h3><ul class="small">${li(ad.buy)}</ul>
+    <p class="small muted">위 내용은 신호를 정해진 규칙으로 정리한 참고 의견이며 투자 권유가 아닙니다.</p>
+  </div>`;
 }
 
 /* 시장 점검: 개별주 급락의 상당수는 시장 하락과 함께 옵니다 */
