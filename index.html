@@ -106,6 +106,8 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border
 table{border-collapse:collapse;font-size:13px;width:100%;min-width:520px}
 th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-weight:500;color:var(--muted);font-size:12px}
+.keyf{font-family:var(--f-num)!important;-webkit-text-security:disc}
+.keyf.show{-webkit-text-security:none}
 /* 종목 검색 */
 .search{display:flex;flex-direction:column;gap:6px}
 .qres{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
@@ -138,7 +140,7 @@ th{font-weight:500;color:var(--muted);font-size:12px}
 <div class="wrap">
   <header class="top">
     <div>
-      <div class="eyebrow">US 주식 · 상승 전 7가지 신호</div>
+      <div class="eyebrow">US 주식 · 상승 전 7가지 신호 · 버전 4</div>
       <h1>상승신호 스캐너</h1>
     </div>
     <div class="row">
@@ -172,8 +174,11 @@ th{font-weight:500;color:var(--muted);font-size:12px}
     <div class="panel stack">
       <h2>데이터 연결</h2>
       <p class="small muted">무료 Finnhub API 키가 필요합니다. finnhub.io에서 가입하면 바로 발급됩니다. 키는 이 기기에만 저장됩니다.</p>
-      <input type="password" id="apiKey" placeholder="Finnhub API 키" autocomplete="off">
-      <input type="password" id="avKey" placeholder="Alpha Vantage API 키 (매수 타이밍 분석용, 선택)" autocomplete="off">
+      <label class="small" for="apiKey">Finnhub 키 <span id="fkState" class="muted"></span></label>
+      <input type="text" class="keyf" id="apiKey" name="fh-token-x" placeholder="Finnhub 키 붙여넣기" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true">
+      <label class="small" for="avKey">Alpha Vantage 키 <span class="muted">(매수 타이밍 분석용, 선택)</span> <span id="avState" class="muted"></span></label>
+      <input type="text" class="keyf" id="avKey" name="av-token-x" placeholder="Alpha Vantage 키 붙여넣기" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true">
+      <label class="row small muted" style="gap:6px"><input type="checkbox" id="showKeys"> 키 보이기</label>
       <p class="small muted">매수 타이밍 분석에는 일봉 차트가 필요합니다. Finnhub 무료 등급에서 일봉이 막히면 Alpha Vantage 키로 대신 받습니다(하루 25회).</p>
       <div class="row"><button class="btn" id="saveKey">키 저장</button><span id="keyMsg" class="small muted"></span></div>
     </div>
@@ -700,7 +705,7 @@ async function fh(path, key){
   const url = `https://finnhub.io/api/v1${path}${path.includes("?")?"&":"?"}token=${encodeURIComponent(key)}`;
   let res = await fetch(url);
   if(res.status===429){ await sleep(6000); lastCall=Date.now(); res = await fetch(url); }
-  if(res.status===401) throw new Error("API 키가 올바르지 않습니다.");
+  if(res.status===401) throw new Error("Finnhub API 키가 올바르지 않습니다. ‘키 보이기’로 저장된 키가 Finnhub 대시보드의 키와 같은지 확인하세요.");
   if(res.status===403) return null; // 무료 등급에서 막힌 항목은 건너뜀
   if(!res.ok) throw new Error(`서버 응답 ${res.status}`);
   return res.json();
@@ -883,9 +888,21 @@ $("list").addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){const
 $("weights").addEventListener("input",e=>{const f=e.target.dataset.f; if(!f)return; state.W[f]=+e.target.value; LS.set("ss.w",state.W);
   const sum=FACTORS.reduce((a,x)=>a+(state.W[x.id]||0),0)||1; document.querySelectorAll(".wt").forEach((el,i)=>{el.querySelector(".num").textContent=Math.round((state.W[FACTORS[i].id]||0)/sum*100)+"%";}); renderList();});
 $("resetW").addEventListener("click",()=>{state.W={...DEFAULT_W}; LS.set("ss.w",state.W); renderWeights(); renderList();});
-$("saveKey").addEventListener("click",()=>{const k=$("apiKey").value.trim(), a=$("avKey").value.trim();
+function keyState(){
+  const tail=k=>k?`저장됨 ····${k.slice(-4)} (${k.length}자)`:"저장 안 됨";
+  $("fkState").textContent=tail(LS.get("ss.key","")); $("avState").textContent=tail(LS.get("ss.avkey",""));
+}
+$("showKeys").addEventListener("change",e=>{document.querySelectorAll(".keyf").forEach(i=>i.classList.toggle("show",e.target.checked));});
+$("saveKey").addEventListener("click",()=>{const k=$("apiKey").value.replace(/\s/g,""), a=$("avKey").value.replace(/\s/g,"");
   if(!k&&!a){$("keyMsg").textContent="키를 입력하세요.";return;}
-  if(k) LS.set("ss.key",k); if(a) LS.set("ss.avkey",a); $("keyMsg").textContent="저장했습니다.";});
+  const msgs=[];
+  if(k){ if(!/^[A-Za-z0-9]{20,64}$/.test(k)) msgs.push("Finnhub 키 형식이 이상합니다(영문·숫자 20자 이상). 다른 값이 자동 입력되지 않았는지 확인하세요."); else LS.set("ss.key",k); }
+  if(a){ if(!/^[A-Za-z0-9]{8,32}$/.test(a)) msgs.push("Alpha Vantage 키 형식이 이상합니다(영문·숫자 16자 내외)."); else LS.set("ss.avkey",a); }
+  if(k&&/^[A-Za-z0-9]+$/.test(k)&&k===a) msgs.push("두 칸에 같은 값이 들어 있습니다. 각각 다른 키를 넣어 주세요.");
+  $("keyMsg").textContent = msgs.length? msgs.join(" ") : "저장했습니다.";
+  keyState();
+  if(k && !msgs.length){ Object.keys(state.data).forEach(s=>{ if(state.data[s].error) delete state.data[s]; }); LS.set("ss.data",state.data); }
+});
 $("runBtn").addEventListener("click",run);
 $("stopBtn").addEventListener("click",()=>{state.stop=true;});
 $("clearCache").addEventListener("click",()=>{state.data={}; LS.del("ss.data"); $("prog").style.width="0"; $("runMsg").textContent="저장된 데이터를 지웠습니다."; renderList();});
@@ -904,6 +921,7 @@ $("clearT").addEventListener("click",()=>{ const b=$("clearT");
 $("tickers").value = state.tickers; updateCount();
 if(LS.get("ss.key","")) $("apiKey").value = LS.get("ss.key","");
 if(LS.get("ss.avkey","")) $("avKey").value = LS.get("ss.avkey","");
+keyState();
 renderWeights(); renderList();
 const t0 = LS.get("ss.tab","rank"); const tb=document.querySelector(`.tab[data-v="${t0}"]`); if(tb) tb.click();
 </script>
